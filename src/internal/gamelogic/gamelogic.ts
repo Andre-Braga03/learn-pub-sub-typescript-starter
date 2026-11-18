@@ -1,6 +1,7 @@
 import readline from "readline";
 import { GameState } from "./gamestate.js";
 
+
 const rl = readline.createInterface({
   input: process.stdin,
   output: process.stdout,
