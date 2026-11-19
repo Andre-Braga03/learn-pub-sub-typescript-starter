@@ -8,15 +8,15 @@ import {
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
 import { GameState } from "../internal/gamelogic/gamestate.js";
-import type { PlayingState } from "../internal/gamelogic/gamestate.js";
 import { commandMove } from "../internal/gamelogic/move.js";
 import { commandSpawn } from "../internal/gamelogic/spawn.js";
 import { declareAndBind, SimpleQueueType, subscribeJSON } from "../internal/pubsub/consume.js";
 import { ExchangePerilDirect, ExchangePerilTopic, PauseKey, ArmyMovesPrefix } from "../internal/routing/routing.js";
-import { handlerPause, handlerMove } from "./handlers.js";
+import { handlerPause, handlerMove, handlerWar } from "./handlers.js";
 import type { ArmyMove } from "../internal/gamelogic/gamedata.js";
 import { publishJSON } from "../internal/pubsub/publish.js";
-
+import type { RecognitionOfWar } from "../internal/gamelogic/gamedata.js";
+import { WarRecognitionsPrefix } from "../internal/routing/routing.js";
 
 async function main() {
  const rabbitConnString = "amqp://guest:guest@localhost:5672/";
@@ -34,18 +34,24 @@ async function main() {
   PauseKey,
   SimpleQueueType.Transient,
 );
-
 const gameState = new GameState(username);
+const confirmChannel = await conn.createConfirmChannel();
 await subscribeJSON(
   conn,
   ExchangePerilTopic,
   `${ArmyMovesPrefix}.${username}`,
   `${ArmyMovesPrefix}.*`,
   SimpleQueueType.Transient,
-  (move: ArmyMove) => handlerMove(gameState, move),
+  (move: ArmyMove) => handlerMove(gameState, confirmChannel, move),
 );
-
-const confirmChannel = await conn.createConfirmChannel();
+await subscribeJSON(
+  conn,
+  ExchangePerilTopic,
+  "war",
+  `${WarRecognitionsPrefix}.*`,
+  SimpleQueueType.Durable,
+  (rw: RecognitionOfWar) => handlerWar(gameState, confirmChannel, rw),
+);
 
  while(true){
   const words = await getInput();
@@ -71,6 +77,7 @@ const confirmChannel = await conn.createConfirmChannel();
           move,
         );
         console.log("Move successful");
+        
       } catch (err){
         console.log((err as Error).message);
       }
