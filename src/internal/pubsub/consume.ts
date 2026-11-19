@@ -1,7 +1,6 @@
 import amqp from "amqplib";
 import type { Channel } from "amqplib";
-
-
+import { decode } from "@msgpack/msgpack";
 export enum SimpleQueueType {
   Durable,
   Transient,
@@ -38,17 +37,50 @@ export async function subscribeJSON<T>(
   queueType: SimpleQueueType,
   handler: (data: T) => Promise<AckType> | AckType,
 ): Promise<void>{
+  return subscribe(conn, exchange, queueName, key, queueType, handler, (data) =>
+    JSON.parse(data.toString()),
+  );
+}
 
-  const [channel, queue] = await declareAndBind(conn, exchange, queueName, key, queueType);
- 
+export async function subscribeMsgPack<T>(
+  conn: amqp.ChannelModel,
+  exchange: string,
+  queueName: string,
+  key: string,
+  queueType: SimpleQueueType,
+  handler: (data: T) => Promise<AckType> | AckType,
+){
+  return subscribe(conn, exchange, queueName, key, queueType, handler, (data) =>
+    decode(data) as T,
+  );
+}
+
+
+export async function subscribe<T>(
+  conn: amqp.ChannelModel,
+  exchange: string,
+  queueName: string,
+  routingKey: string,
+  simpleQueueType: SimpleQueueType,
+  handler: (data: T) => Promise<AckType> | AckType,
+  deserializer: (data: Buffer) => T,
+): Promise<void> {
+  const [channel, queue] = await declareAndBind(
+    conn,
+    exchange,
+    queueName,
+    routingKey,
+    simpleQueueType,
+  );
+  await channel.prefetch(10);
   await channel.consume(queue.queue, async (msg) => {
-    if(msg == null) return;
-
-    try{
-      const data = JSON.parse(msg.content.toString()) as T;
+    if (msg == null) {
+      return;
+    }
+    try {
+      const data = deserializer(msg.content);
       const ack = await handler(data);
-      
-      switch(ack){
+      switch (ack) {
         case "Ack":
           channel.ack(msg);
           break;
@@ -59,13 +91,8 @@ export async function subscribeJSON<T>(
           channel.nack(msg, false, false);
           break;
       }
-  
-    } catch (err){
-      console.error("Error parsing JSON:", err);
-
+    } catch (err) {
+      console.error("Error processing message:", err);
     }
-
-
   });
-
 }

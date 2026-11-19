@@ -4,6 +4,7 @@ import {
   clientWelcome,
   commandStatus,
   getInput,
+  getMaliciousLog,
   printClientHelp,
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
@@ -14,7 +15,7 @@ import { declareAndBind, SimpleQueueType, subscribeJSON } from "../internal/pubs
 import { ExchangePerilDirect, ExchangePerilTopic, PauseKey, ArmyMovesPrefix } from "../internal/routing/routing.js";
 import { handlerPause, handlerMove, handlerWar } from "./handlers.js";
 import type { ArmyMove } from "../internal/gamelogic/gamedata.js";
-import { publishJSON } from "../internal/pubsub/publish.js";
+import { publishGameLog, publishJSON } from "../internal/pubsub/publish.js";
 import type { RecognitionOfWar } from "../internal/gamelogic/gamedata.js";
 import { WarRecognitionsPrefix } from "../internal/routing/routing.js";
 
@@ -59,6 +60,7 @@ await subscribeJSON(
     continue;
   }
   const command = words[0];
+
   switch(command){
     case "spawn":
       try{
@@ -89,7 +91,15 @@ await subscribeJSON(
       printClientHelp();
       break;
     case "spam":
-      console.log("Spamming not allowed yet");
+        const n = parseInt(words[1] ?? "", 10);
+        if (Number.isNaN(n)) {
+          console.log("usage: spam <n>");
+          break;
+        }
+        for (let i = 0; i < n; i++) {
+          await publishGameLog(confirmChannel, username, getMaliciousLog());
+        }
+
       break;
     case "quit":
       printQuit();
