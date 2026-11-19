@@ -8,10 +8,15 @@ import {
   printQuit,
 } from "../internal/gamelogic/gamelogic.js";
 import { GameState } from "../internal/gamelogic/gamestate.js";
+import type { PlayingState } from "../internal/gamelogic/gamestate.js";
 import { commandMove } from "../internal/gamelogic/move.js";
 import { commandSpawn } from "../internal/gamelogic/spawn.js";
-import { declareAndBind, SimpleQueueType } from "../internal/pubsub/consume.js";
-import { ExchangePerilDirect, PauseKey } from "../internal/routing/routing.js";
+import { declareAndBind, SimpleQueueType, subscribeJSON } from "../internal/pubsub/consume.js";
+import { ExchangePerilDirect, ExchangePerilTopic, PauseKey, ArmyMovesPrefix } from "../internal/routing/routing.js";
+import { handlerPause, handlerMove } from "./handlers.js";
+import type { ArmyMove } from "../internal/gamelogic/gamedata.js";
+import { publishJSON } from "../internal/pubsub/publish.js";
+
 
 async function main() {
  const rabbitConnString = "amqp://guest:guest@localhost:5672/";
@@ -31,6 +36,16 @@ async function main() {
 );
 
 const gameState = new GameState(username);
+await subscribeJSON(
+  conn,
+  ExchangePerilTopic,
+  `${ArmyMovesPrefix}.${username}`,
+  `${ArmyMovesPrefix}.*`,
+  SimpleQueueType.Transient,
+  (move: ArmyMove) => handlerMove(gameState, move),
+);
+
+const confirmChannel = await conn.createConfirmChannel();
 
  while(true){
   const words = await getInput();
@@ -48,7 +63,13 @@ const gameState = new GameState(username);
       break;
     case "move":
       try{
-        commandMove(gameState, words);
+        const move = commandMove(gameState, words);
+        await publishJSON(
+          confirmChannel,
+          ExchangePerilTopic,
+          `${ArmyMovesPrefix}.${username}`,
+          move,
+        );
         console.log("Move successful");
       } catch (err){
         console.log((err as Error).message);

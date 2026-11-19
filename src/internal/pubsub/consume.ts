@@ -25,3 +25,30 @@ const channel = await conn.createChannel();
  return [channel, queue];
 
 }
+
+export async function subscribeJSON<T>(
+  conn: amqp.ChannelModel,
+  exchange: string,
+  queueName: string,
+  key: string,
+  queueType: SimpleQueueType,
+  handler: (data: T) => void,
+): Promise<void>{
+
+  const [channel, queue] = await declareAndBind(conn, exchange, queueName, key, queueType);
+ 
+  await channel.consume(queue.queue, (msg) => {
+    if(msg == null) return;
+
+    try{
+      const data = JSON.parse(msg.content.toString()) as T;
+      handler(data);
+      channel.ack(msg);
+      
+    } catch (err){
+      console.error("Error parsing JSON:", err);
+    }
+
+  });
+
+}
